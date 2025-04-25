@@ -11,58 +11,41 @@ from statsmodels.stats.outliers_influence import variance_inflation_factor
 st.set_page_config(
     page_title="India Land Use Dashboard",
     page_icon="🌾",
-    layout="wide",  # Use wide layout for better dashboard feel
+    layout="wide",
     initial_sidebar_state="expanded"
 )
 
 # --- Data Loading and Caching ---
-# Cache the data loading and preprocessing to speed up the app
 @st.cache_data
 def load_data(file_path='data.csv'):
     df = pd.read_csv(file_path)
-
-    # Define numeric columns based on your analysis
     numeric_cols = [
-        'Reported land area ',
-        'Forest land area',
-        'Net sown land area',
-        'Cropped land area',
-        'Land area sown more than once',
-        'Barren and unculturable land area',
-        'Culturable waste land area'
+        'Reported land area ', 'Forest land area', 'Net sown land area',
+        'Cropped land area', 'Land area sown more than once',
+        'Barren and unculturable land area', 'Culturable waste land area'
     ]
-    # Include other columns needed for context or filtering
     other_cols = ['State', 'District', 'YearCode', 'Year']
 
-    # Ensure numeric consistency and handle potential errors
     for col in numeric_cols:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors='coerce')
 
-    # Replace 0 with NaN in numeric area columns
     df[numeric_cols] = df[numeric_cols].replace(0, np.nan)
-
-    # --- Imputation Strategy ---
-    # Group by State and YearCode for more targeted imputation (Optional, Mean is simpler)
-    # For simplicity here, using overall column mean as in your original code
     missing_before_imputation = df[numeric_cols].isnull().sum()
+
     for col in numeric_cols:
          if col in df.columns:
             mean_val = df[col].mean()
             df[col].fillna(mean_val, inplace=True)
     missing_after_imputation = df[numeric_cols].isnull().sum()
 
-
-    # Feature Engineering: Calculate Cropping Intensity (Handle potential division by zero/NaN)
     if 'Cropped land area' in df.columns and 'Net sown land area' in df.columns:
-         # Ensure Net sown land area isn't NaN or zero before division
         df['Net sown land area_safe'] = df['Net sown land area'].replace(0, np.nan)
         df['Cropping Intensity'] = df['Cropped land area'] / df['Net sown land area_safe']
-        # Fill resulting NaNs in Cropping Intensity (e.g., with 1 or median/mean)
-        df['Cropping Intensity'].fillna(df['Cropping Intensity'].median(), inplace=True) # Example: fill with median
-        df.drop(columns=['Net sown land area_safe'], inplace=True) # Clean up temp column
+        df['Cropping Intensity'].fillna(df['Cropping Intensity'].median(), inplace=True)
+        df.drop(columns=['Net sown land area_safe'], inplace=True)
     else:
-        df['Cropping Intensity'] = np.nan # Assign NaN if columns don't exist
+        df['Cropping Intensity'] = np.nan
 
     return df, numeric_cols, missing_before_imputation, missing_after_imputation
 
@@ -70,12 +53,13 @@ def load_data(file_path='data.csv'):
 df_clean, numeric_cols, missing_before, missing_after = load_data()
 
 # --- Sidebar Navigation ---
-st.sidebar.title("Dashboard Navigation")
+st.sidebar.title("📊 Dashboard Navigation")
 page = st.sidebar.radio("Go to", [
     "Introduction",
     "National Overview",
     "State-Level Deep Dive",
     "Relationships & Intensity",
+    "Analysis Highlights",  # <-- New Page Added Here
     "Data & Methodology"
 ])
 
@@ -99,6 +83,7 @@ if page == "Introduction":
         *   A national overview showing overall distributions and statistics.
         *   Detailed comparisons between states.
         *   Analysis of cropping intensity and correlations between land use types.
+        *   A summary of key findings from the analysis.
         *   Information on the data source and methodology used.
 
         Use the sidebar to navigate through the different sections of the dashboard.
@@ -113,7 +98,10 @@ if page == "Introduction":
     with col3:
         st.metric("Avg. Net Sown Area (Ha)", f"{df_clean['Net sown land area'].mean():,.0f}")
     with col4:
-        st.metric("Avg. Cropping Intensity", f"{df_clean['Cropping Intensity'].mean():.2f}")
+         if 'Cropping Intensity' in df_clean.columns:
+            st.metric("Avg. Cropping Intensity", f"{df_clean['Cropping Intensity'].mean():.2f}")
+         else:
+            st.metric("Avg. Cropping Intensity", "N/A")
 
 
 # === NATIONAL OVERVIEW PAGE ===
@@ -122,7 +110,6 @@ elif page == "National Overview":
     st.markdown("A high-level view of land use patterns across the districts included in the dataset.")
     st.markdown("---")
 
-    # --- Distribution Plots ---
     st.header("Distribution of Key Land Use Areas")
     col1, col2 = st.columns(2)
     with col1:
@@ -148,11 +135,8 @@ elif page == "National Overview":
     """)
     st.markdown("---")
 
-    # --- National Summary ---
     st.header("National Summary Statistics (Hectares)")
-    # Select key columns for the summary table
     summary_cols = ['Reported land area ', 'Forest land area', 'Net sown land area', 'Cropped land area', 'Land area sown more than once', 'Cropping Intensity']
-    # Ensure Cropping Intensity is included if calculated
     if 'Cropping Intensity' not in df_clean.columns:
          summary_cols.remove('Cropping Intensity')
 
@@ -166,16 +150,14 @@ elif page == "State-Level Deep Dive":
     st.markdown("Explore variations and patterns in land use across different Indian states.")
     st.markdown("---")
 
-    # --- State Selection ---
     all_states = sorted(df_clean['State'].unique())
     selected_states = st.multiselect(
         "Select States to Compare (or leave blank for Top 10)",
         all_states,
-        default=[] # Start with none selected to show top 10 initially
+        default=[]
     )
 
     if not selected_states:
-        # If no states are selected, show top 10 based on a metric (e.g., Net Sown Area)
         top_states_data = df_clean.groupby('State')['Net sown land area'].mean().nlargest(10).reset_index()
         st.subheader("Top 10 States by Average Net Sown Area per District")
         fig_top_states = px.bar(top_states_data, x='State', y='Net sown land area',
@@ -190,11 +172,10 @@ elif page == "State-Level Deep Dive":
 
     st.markdown("---")
 
-    # --- Box Plots for Variability ---
     st.header("Variability within Selected States")
     col1, col2 = st.columns(2)
     plot_var_1 = 'Net sown land area'
-    plot_var_2 = 'Cropping Intensity' # Changed from Cropped land area for variety
+    plot_var_2 = 'Cropping Intensity'
 
     with col1:
         if plot_var_1 in data_to_plot.columns:
@@ -220,7 +201,6 @@ elif page == "State-Level Deep Dive":
 
     st.markdown("---")
 
-    # --- Hypothesis Test Result ---
     st.header("Statistical Comparison Example")
     st.markdown("Is there a significant difference in Net Sown Area between Andhra Pradesh and Assam?")
 
@@ -229,10 +209,10 @@ elif page == "State-Level Deep Dive":
         assam = df_clean[df_clean['State'] == 'Assam']['Net sown land area'].dropna()
 
         if len(andhra) > 1 and len(assam) > 1:
-            t_stat, p_value = stats.ttest_ind(andhra, assam, equal_var=False, nan_policy='omit') # Handle NaNs just in case
+            t_stat, p_value = stats.ttest_ind(andhra, assam, equal_var=False, nan_policy='omit')
             st.write(f"**T-test Results:**")
             st.write(f"*   T-statistic: {t_stat:.3f}")
-            st.write(f"*   P-value: {p_value:.3e}") # Scientific notation for small p-values
+            st.write(f"*   P-value: {p_value:.3e}")
             if p_value < 0.05:
                 st.success("Conclusion: Reject the null hypothesis. There is a statistically significant difference in the average Net Sown Area between Andhra Pradesh and Assam (p < 0.05).")
             else:
@@ -248,7 +228,6 @@ elif page == "Relationships & Intensity":
     st.markdown("Analyzing how intensively land is used and how different land categories relate to each other.")
     st.markdown("---")
 
-    # --- Cropping Intensity ---
     st.header("Cropping Intensity Analysis")
     if 'Cropping Intensity' in df_clean.columns:
         avg_intensity = df_clean.groupby('State')['Cropping Intensity'].mean().reset_index().sort_values(by='Cropping Intensity', ascending=False)
@@ -266,26 +245,19 @@ elif page == "Relationships & Intensity":
 
     st.markdown("---")
 
-    # --- Correlation Analysis ---
     st.header("Correlation Between Land Use Variables")
     st.markdown("Correlation measures the strength and direction of a linear relationship between two variables (-1 to +1).")
 
-    # Select columns for correlation matrix
     corr_cols = numeric_cols + ['Cropping Intensity']
-    # Remove Cropping Intensity if it wasn't calculated
     if 'Cropping Intensity' not in df_clean.columns:
         corr_cols.remove('Cropping Intensity')
 
     correlation_matrix = df_clean[corr_cols].corr()
 
-    # Plot heatmap using Plotly for interactivity
-    fig_heatmap = px.imshow(correlation_matrix,
-                            text_auto=True, # Show values on heatmap
-                            aspect="auto",
+    fig_heatmap = px.imshow(correlation_matrix, text_auto=True, aspect="auto",
                             title="Correlation Matrix Heatmap",
-                            color_continuous_scale='RdBu_r', # Red-Blue reversed scale
-                            zmin=-1, zmax=1) # Set scale limits
-    fig_heatmap.update_layout(height=600) # Adjust height if needed
+                            color_continuous_scale='RdBu_r', zmin=-1, zmax=1)
+    fig_heatmap.update_layout(height=600)
     st.plotly_chart(fig_heatmap, use_container_width=True)
 
     st.markdown("""
@@ -296,11 +268,9 @@ elif page == "Relationships & Intensity":
     """)
     st.markdown("---")
 
-     # --- Scatter Plot Example ---
     st.header("Example Relationship: Net Sown vs. Cropped Area")
     if 'Net sown land area' in df_clean.columns and 'Cropped land area' in df_clean.columns:
-        fig_scatter = px.scatter(df_clean.sample(1000), # Sample for performance
-                                 x='Net sown land area', y='Cropped land area',
+        fig_scatter = px.scatter(df_clean.sample(1000), x='Net sown land area', y='Cropped land area',
                                  hover_data=['District', 'State'],
                                  title='Net Sown Area vs. Cropped Land Area (Sample of 1000 points)',
                                  labels={'Net sown land area': 'Net Sown Area (Ha)', 'Cropped land area': 'Cropped Land Area (Ha)'},
@@ -309,6 +279,26 @@ elif page == "Relationships & Intensity":
         st.caption("Each point represents a district-year entry. This visualizes the strong positive correlation.")
     else:
          st.warning("Required columns for scatter plot not found.")
+
+# === ANALYSIS HIGHLIGHTS PAGE ===
+elif page == "Analysis Highlights":
+    st.title("💡 Key Analysis Results")
+    st.markdown("Here are the main takeaways from the analysis of the Indian land use data:")
+    st.markdown("---")
+
+    st.markdown("""
+        1.  📊 **Significant State Variation:** There are substantial differences in average Net Sown Area, Cropped Land Area, and Cropping Intensity across Indian states, reflecting diverse agricultural practices and geographical conditions. *(See State-Level Deep Dive)*
+        2.  📉 **Skewed Distributions:** Key land use metrics like Net Sown Area and Cropped Land Area generally show right-skewed distributions across districts, meaning most districts have smaller areas, while a few are very large. They are not normally distributed. *(See National Overview & Methodology)*
+        3.  🔗 **Strong Correlation:** Net Sown Area and Cropped Land Area are very highly positively correlated, indicating they largely capture similar information about the extent of cultivation. *(See Relationships)*
+        4.  📈 **Multiple Cropping Impact:** Land Area Sown More Than Once strongly contributes to higher Cropped Land Area and is positively correlated with Cropping Intensity. *(See Relationships)*
+        5.  🌾 **Cropping Intensity Insights:** Cropping Intensity varies significantly by state, highlighting regions with more intensive land use (multiple crops per year), often linked to factors like irrigation. *(See Relationships & Intensity)*
+        6.  🔍 **Outliers Present:** Potential outliers exist in variables like Net Sown Area, representing districts with exceptionally high or low values compared to the norm. Further investigation would be needed to confirm if these are data errors or genuine extremes. *(See Methodology)*
+        7.  ↔️ **Statistical Differences:** Hypothesis testing (T-test) confirmed statistically significant differences in average Net Sown Area between specific states like Andhra Pradesh and Assam. *(See State-Level Deep Dive)*
+        8.  ⚠️ **Multicollinearity Warning:** High Variance Inflation Factors (VIF) for Net Sown Area and Cropped Land Area indicate strong multicollinearity. Caution is needed if using both as predictors in regression models. *(See Methodology)*
+        9.  🧹 **Data Cleaning Importance:** Handling zeros as missing data and imputing them (using the mean here) was a necessary step to prepare the dataset for analysis, though imputation can affect distributions. *(See Methodology)*
+        10. ✅ **Foundation for Further Study:** This analysis provides a quantitative overview of land use patterns, offering insights and a foundation for more targeted research into specific regions, crops, or policy impacts.
+    """)
+    st.markdown("---")
 
 
 # === DATA & METHODOLOGY PAGE ===
@@ -353,7 +343,6 @@ elif page == "Data & Methodology":
     st.markdown("---")
 
     st.header("Multicollinearity Assessment (VIF)")
-    # Calculate VIF again here or load from cache if needed
     X = df_clean[numeric_cols].dropna()
     vif_data = pd.DataFrame()
     vif_data['Feature'] = X.columns
@@ -368,7 +357,6 @@ elif page == "Data & Methodology":
     st.markdown("---")
 
     st.header("Outlier Analysis Example (Net Sown Area)")
-    # Calculate outliers again or use stored results
     Q1 = df_clean['Net sown land area'].quantile(0.25)
     Q3 = df_clean['Net sown land area'].quantile(0.75)
     IQR = Q3 - Q1
